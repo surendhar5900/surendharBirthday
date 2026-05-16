@@ -19,6 +19,9 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
   html { scroll-behavior: smooth; }
+  html, body { scroll-snap-type: none; }
+  /* Always start at top */
+  body { overflow-anchor: none; }
 
   body {
     background: var(--dark);
@@ -332,8 +335,8 @@
     animation: cardFloat 4s ease-in-out infinite alternate;
   }
   @keyframes cardFloat {
-    from { transform: translateY(0); box-shadow: 0 0 80px rgba(139,0,255,0.2); }
-    to { transform: translateY(-15px); box-shadow: 0 20px 100px rgba(139,0,255,0.4), 0 0 200px rgba(255,20,147,0.2); }
+    from { transform: translateY(0); }
+    to { transform: translateY(-8px); }
   }
   .message-card::before {
     content: '';
@@ -447,8 +450,7 @@
     background: linear-gradient(var(--dark), var(--dark)) padding-box,
                 linear-gradient(135deg, rgba(255,215,0,0.3), rgba(255,20,147,0.3)) border-box;
     transition: transform 0.3s, box-shadow 0.3s;
-    animation: galleryReveal 0.6s ease forwards;
-    opacity: 0;
+    will-change: transform;
   }
   .gallery-item:hover {
     transform: scale(1.03) translateY(-5px);
@@ -976,7 +978,8 @@
   .gallery-tab.active { display: block; }
 </style>
 </head>
-<body>
+<body onload="window.scrollTo(0,0)">
+<div id="top" style="position:absolute;top:0;left:0;width:0;height:0;overflow:hidden;" tabindex="-1"></div>
 
 <canvas id="particles-canvas"></canvas>
 <canvas id="confetti-canvas"></canvas>
@@ -1134,6 +1137,11 @@
 </footer>
 
 <script>
+// ===================== SCROLL TO TOP ON LOAD =====================
+history.scrollRestoration = 'manual';
+window.addEventListener('load', () => { window.scrollTo({ top: 0, left: 0, behavior: 'instant' }); });
+document.addEventListener('DOMContentLoaded', () => { window.scrollTo(0, 0); });
+
 // ===================== CURSOR =====================
 const cursor = document.getElementById('cursor');
 const trail = document.getElementById('cursor-trail');
@@ -1156,7 +1164,7 @@ const pctx = pc.getContext('2d');
 pc.width = window.innerWidth; pc.height = window.innerHeight;
 window.addEventListener('resize', () => { pc.width = window.innerWidth; pc.height = window.innerHeight; });
 const particles = [];
-for(let i = 0; i < 80; i++) {
+for(let i = 0; i < 30; i++) {
   particles.push({
     x: Math.random()*pc.width, y: Math.random()*pc.height,
     vx: (Math.random()-0.5)*0.4, vy: (Math.random()-0.5)*0.4,
@@ -1165,7 +1173,10 @@ for(let i = 0; i < 80; i++) {
     alpha: Math.random()*0.5+0.2
   });
 }
-function drawParticles() {
+let lastParticleFrame = 0;
+function drawParticles(ts) {
+  if(ts - lastParticleFrame < 33) { requestAnimationFrame(drawParticles); return; } // ~30fps
+  lastParticleFrame = ts;
   pctx.clearRect(0, 0, pc.width, pc.height);
   particles.forEach(p => {
     p.x += p.vx; p.y += p.vy;
@@ -1187,7 +1198,7 @@ drawParticles();
 // ===================== BALLOONS =====================
 const balloonEmojis = ['🎈','🎉','🎊','⭐','🌟','✨','🥳','🎂','🎁','🌸','🌺','💫'];
 const bc = document.getElementById('balloons');
-for(let i = 0; i < 15; i++) {
+for(let i = 0; i < 6; i++) {
   const b = document.createElement('div');
   b.className = 'balloon';
   b.textContent = balloonEmojis[Math.floor(Math.random()*balloonEmojis.length)];
@@ -1376,9 +1387,37 @@ function createGalleryItem(src, index, arr) {
 }
 
 function buildGallery(containerEl, files) {
-  files.forEach((f, i) => {
-    containerEl.appendChild(createGalleryItem(f, i, files));
-  });
+  // Render first 12 immediately, rest in chunks as user scrolls
+  const CHUNK = 12;
+  let rendered = 0;
+
+  function renderChunk() {
+    const end = Math.min(rendered + CHUNK, files.length);
+    for(let i = rendered; i < end; i++) {
+      containerEl.appendChild(createGalleryItem(files[i], i, files));
+    }
+    rendered = end;
+  }
+
+  renderChunk(); // first chunk immediately
+
+  // Sentinel div — when visible, load next chunk
+  function addSentinel() {
+    if(rendered >= files.length) return;
+    const sentinel = document.createElement('div');
+    sentinel.style.height = '1px';
+    containerEl.appendChild(sentinel);
+    const obs = new IntersectionObserver(entries => {
+      if(entries[0].isIntersecting) {
+        obs.disconnect();
+        sentinel.remove();
+        renderChunk();
+        addSentinel();
+      }
+    }, { rootMargin: '200px' });
+    obs.observe(sentinel);
+  }
+  addSentinel();
 }
 
 buildGallery(document.getElementById('gallery-all'), allFiles);
@@ -1562,7 +1601,7 @@ function spawnMusicNote() {
   document.body.appendChild(n);
   setTimeout(() => n.remove(), 3000);
 }
-setInterval(() => { if(isPlaying) spawnMusicNote(); }, 1500);
+setInterval(() => { if(isPlaying) spawnMusicNote(); }, 3000);
 
 buildPlaylist();
 loadSong();
@@ -1675,8 +1714,8 @@ const fireworks = [];
 let animFrame;
 function confettiLoop() {
   cctx.clearRect(0, 0, cc.width, cc.height);
-  if(confettiActive && confettiPieces.length < 300) {
-    for(let i = 0; i < 8; i++) confettiPieces.push(new Confetti());
+  if(confettiActive && confettiPieces.length < 150) {
+    for(let i = 0; i < 5; i++) confettiPieces.push(new Confetti());
   }
   for(let i = confettiPieces.length - 1; i >= 0; i--) {
     confettiPieces[i].update();
@@ -1720,7 +1759,7 @@ document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
 
 // ===================== FLOATING PARTICLES =====================
 const floatEmojisArr = ['🎈','⭐','🌟','✨','💫','🎊','🎉','❤️','🌸','🌺','🎵','🎶'];
-for(let i = 0; i < 20; i++) {
+for(let i = 0; i < 8; i++) {
   const el = document.createElement('div');
   el.className = 'float-particle';
   el.textContent = floatEmojisArr[Math.floor(Math.random()*floatEmojisArr.length)];
@@ -1738,6 +1777,312 @@ document.addEventListener('click', e => {
   cancelAnimationFrame(animFrame);
   confettiLoop();
 });
+
+</script>
+
+<!-- ===================== TAMIL BGM BACKGROUND PLAYER ===================== -->
+<style>
+  #bgm-player {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 99990;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+    font-family: 'Poppins', sans-serif;
+  }
+
+  #bgm-panel {
+    background: rgba(10, 5, 30, 0.92);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 215, 0, 0.35);
+    border-radius: 20px;
+    padding: 16px 18px;
+    width: 270px;
+    box-shadow: 0 0 40px rgba(255, 215, 0, 0.2), 0 8px 32px rgba(0,0,0,0.6);
+    display: none;
+    animation: bgmSlideIn 0.3s ease;
+  }
+  #bgm-panel.open { display: block; }
+  @keyframes bgmSlideIn {
+    from { opacity: 0; transform: translateY(15px) scale(0.95); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  #bgm-toggle-btn {
+    width: 58px; height: 58px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #FFD700, #FF1493);
+    border: none;
+    cursor: pointer;
+    font-size: 1.6rem;
+    box-shadow: 0 0 25px rgba(255,215,0,0.5), 0 4px 15px rgba(0,0,0,0.4);
+    display: flex; align-items: center; justify-content: center;
+    transition: transform 0.2s, box-shadow 0.2s;
+    position: relative;
+  }
+  #bgm-toggle-btn:hover { transform: scale(1.1); box-shadow: 0 0 40px rgba(255,215,0,0.7); }
+  #bgm-toggle-btn .bgm-pulse {
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,215,0,0.5);
+    animation: bgmPulseRing 1.8s ease-out infinite;
+    display: none;
+  }
+  #bgm-toggle-btn.playing .bgm-pulse { display: block; }
+  @keyframes bgmPulseRing {
+    0%   { transform: scale(1); opacity: 0.8; }
+    100% { transform: scale(1.5); opacity: 0; }
+  }
+
+  .bgm-title-row {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .bgm-label {
+    font-size: 0.75rem;
+    color: var(--gold);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .bgm-close {
+    background: none; border: none;
+    color: rgba(255,255,255,0.4); font-size: 1rem;
+    cursor: pointer; padding: 0; line-height: 1;
+  }
+  .bgm-close:hover { color: white; }
+
+  .bgm-now-playing {
+    font-size: 0.78rem;
+    color: rgba(255,255,255,0.85);
+    background: rgba(255,215,0,0.08);
+    border: 1px solid rgba(255,215,0,0.15);
+    border-radius: 10px;
+    padding: 8px 10px;
+    margin-bottom: 12px;
+    min-height: 36px;
+    display: flex; align-items: center; gap: 8px;
+    line-height: 1.4;
+  }
+  .bgm-note-icon { font-size: 1rem; flex-shrink: 0; animation: bgmNoteBounce 0.8s ease-in-out infinite alternate; }
+  @keyframes bgmNoteBounce { from { transform: translateY(0); } to { transform: translateY(-4px); } }
+
+  .bgm-controls {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    margin-bottom: 12px;
+  }
+  .bgm-btn {
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: white; border-radius: 50%;
+    width: 38px; height: 38px;
+    font-size: 1rem; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s;
+  }
+  .bgm-btn:hover { background: rgba(255,215,0,0.2); border-color: var(--gold); }
+  .bgm-btn.main {
+    width: 50px; height: 50px; font-size: 1.3rem;
+    background: linear-gradient(135deg, #FFD700, #FFA500);
+    color: #050510; border: none;
+    box-shadow: 0 0 20px rgba(255,215,0,0.4);
+  }
+  .bgm-btn.main:hover { transform: scale(1.08); box-shadow: 0 0 30px rgba(255,215,0,0.7); }
+
+  .bgm-vol-row {
+    display: flex; align-items: center; gap: 8px;
+    color: rgba(255,255,255,0.5); font-size: 0.8rem;
+  }
+  .bgm-vol-row input[type=range] {
+    flex: 1; height: 3px;
+    -webkit-appearance: none;
+    background: linear-gradient(90deg, var(--gold), var(--rose));
+    border-radius: 99px; outline: none; cursor: pointer;
+  }
+  .bgm-vol-row input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px;
+    border-radius: 50%; background: var(--gold);
+    box-shadow: 0 0 8px var(--gold); cursor: pointer;
+  }
+
+  .bgm-playlist-mini {
+    margin-top: 12px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    padding-top: 10px;
+    max-height: 160px;
+    overflow-y: auto;
+  }
+  .bgm-playlist-mini::-webkit-scrollbar { width: 3px; }
+  .bgm-playlist-mini::-webkit-scrollbar-thumb { background: var(--gold); border-radius: 99px; }
+  .bgm-song-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; border-radius: 8px;
+    cursor: pointer; font-size: 0.72rem;
+    color: rgba(255,255,255,0.65);
+    transition: all 0.2s;
+  }
+  .bgm-song-row:hover { background: rgba(255,215,0,0.08); color: white; }
+  .bgm-song-row.active { background: rgba(255,215,0,0.12); color: var(--gold); font-weight: 600; }
+  .bgm-song-num { min-width: 16px; color: rgba(255,255,255,0.25); font-size: 0.65rem; }
+  .bgm-song-row.active .bgm-song-num { color: var(--gold); }
+
+  /* Hidden YouTube iframe */
+  #yt-iframe-wrap { display: none; }
+</style>
+
+<!-- Hidden YouTube Player -->
+<div id="yt-iframe-wrap">
+  <div id="yt-player"></div>
+</div>
+
+<!-- Floating BGM Widget -->
+<div id="bgm-player">
+  <div id="bgm-panel">
+    <div class="bgm-title-row">
+      <span class="bgm-label">🎵 Tamil BGM</span>
+      <button class="bgm-close" onclick="toggleBgmPanel()">✕</button>
+    </div>
+    <div class="bgm-now-playing">
+      <span class="bgm-note-icon">🎵</span>
+      <span id="bgm-now-text">Click ▶ to start Tamil BGM...</span>
+    </div>
+    <div class="bgm-controls">
+      <button class="bgm-btn" onclick="bgmPrev()" title="Previous">⏮</button>
+      <button class="bgm-btn main" id="bgm-play-btn" onclick="bgmToggle()">▶</button>
+      <button class="bgm-btn" onclick="bgmNext()" title="Next">⏭</button>
+    </div>
+    <div class="bgm-vol-row">
+      <span>🔊</span>
+      <input type="range" min="0" max="100" value="60" oninput="bgmSetVol(this.value)">
+      <span id="bgm-vol-label">60%</span>
+    </div>
+    <div class="bgm-playlist-mini" id="bgm-playlist"></div>
+  </div>
+
+  <button id="bgm-toggle-btn" onclick="toggleBgmPanel()" title="Tamil BGM">
+    <div class="bgm-pulse"></div>
+    🎵
+  </button>
+</div>
+
+<script>
+// ===================== TAMIL BGM YOUTUBE PLAYER =====================
+// Tamil BGM tracks — video IDs from YouTube
+const bgmTracks = [
+  { title: "Venmathi Venmathiye", movie: "Minnale", id: "uMEEU6zDGAE" },
+  { title: "Kaadhal Rojave", movie: "Roja", id: "GkgbHb5KGNc" },
+  { title: "Ennodu Nee Irundhaal", movie: "I", id: "M1Z4MJTVT6Y" },
+  { title: "Munbe Vaa", movie: "Sillunu Oru Kaadhal", id: "zqXQFjkzBCo" },
+  { title: "Nenjukkul Peidhidum", movie: "Vaaranam Aayiram", id: "4QBqnSFRFec" },
+  { title: "Uyire Uyire", movie: "Kaakha Kaakha", id: "iu9XiPTJYlk" },
+  { title: "Omana Penne", movie: "Gentleman", id: "7mVkWlurRac" },
+  { title: "Aaromale", movie: "Vinnaithaandi Varuvaayaa", id: "GMHmCIf3VEw" },
+  { title: "Kannazhaga", movie: "3", id: "3DolFfyIOFk" },
+  { title: "Yennai Maatrum Kadhale", movie: "Kaatru Veliyidai", id: "cBMnvtCJlls" },
+  { title: "Unakkena Vechen", movie: "Kadhal Desam", id: "xAE-HHZKqSA" },
+  { title: "Thuli Thuli", movie: "Kadhalil Sodhappuvadhu Yeppadi", id: "SrBYkV5GQVE" },
+];
+
+let bgmPlayer = null;
+let bgmCurIdx = 0;
+let bgmPlaying = false;
+let bgmVolume = 60;
+let bgmReady = false;
+let ytApiLoaded = false;
+
+// Build mini playlist
+const bgmPl = document.getElementById('bgm-playlist');
+bgmTracks.forEach((t, i) => {
+  const row = document.createElement('div');
+  row.className = 'bgm-song-row' + (i === 0 ? ' active' : '');
+  row.id = 'bgm-row-' + i;
+  row.innerHTML = `<span class="bgm-song-num">${i+1}</span><span>${t.title} <span style="color:rgba(255,255,255,0.35);font-size:0.65rem;">· ${t.movie}</span></span>`;
+  row.onclick = () => bgmPlayIdx(i);
+  bgmPl.appendChild(row);
+});
+
+function toggleBgmPanel() {
+  const panel = document.getElementById('bgm-panel');
+  panel.classList.toggle('open');
+}
+
+function loadYtApi() {
+  if(ytApiLoaded) return;
+  ytApiLoaded = true;
+  const tag = document.createElement('script');
+  tag.src = "https://www.youtube.com/iframe_api";
+  document.head.appendChild(tag);
+}
+
+function onYouTubeIframeAPIReady() {
+  bgmPlayer = new YT.Player('yt-player', {
+    height: '1', width: '1',
+    videoId: bgmTracks[bgmCurIdx].id,
+    playerVars: { autoplay: 0, controls: 0, disablekb: 1, fs: 0, modestbranding: 1 },
+    events: {
+      onReady: (e) => {
+        bgmReady = true;
+        e.target.setVolume(bgmVolume);
+      },
+      onStateChange: (e) => {
+        // Auto next when song ends
+        if(e.data === YT.PlayerState.ENDED) bgmNext();
+      }
+    }
+  });
+}
+
+function bgmToggle() {
+  if(!ytApiLoaded) { loadYtApi(); }
+  if(!bgmReady) {
+    // Wait for ready then play
+    const wait = setInterval(() => {
+      if(bgmReady) { clearInterval(wait); bgmDoPlay(); }
+    }, 300);
+    return;
+  }
+  if(bgmPlaying) bgmDoPause(); else bgmDoPlay();
+}
+
+function bgmDoPlay() {
+  bgmPlayer.playVideo();
+  bgmPlaying = true;
+  document.getElementById('bgm-play-btn').textContent = '⏸';
+  document.getElementById('bgm-toggle-btn').classList.add('playing');
+  document.getElementById('bgm-now-text').textContent = `${bgmTracks[bgmCurIdx].title} · ${bgmTracks[bgmCurIdx].movie}`;
+}
+function bgmDoPause() {
+  bgmPlayer.pauseVideo();
+  bgmPlaying = false;
+  document.getElementById('bgm-play-btn').textContent = '▶';
+  document.getElementById('bgm-toggle-btn').classList.remove('playing');
+}
+
+function bgmPlayIdx(idx) {
+  bgmCurIdx = idx;
+  document.querySelectorAll('.bgm-song-row').forEach((r,i) => r.classList.toggle('active', i===idx));
+  document.getElementById('bgm-now-text').textContent = `${bgmTracks[idx].title} · ${bgmTracks[idx].movie}`;
+  if(!ytApiLoaded) { loadYtApi(); return; }
+  if(!bgmReady) return;
+  bgmPlayer.loadVideoById(bgmTracks[idx].id);
+  bgmDoPlay();
+}
+
+function bgmNext() {
+  bgmPlayIdx((bgmCurIdx + 1) % bgmTracks.length);
+}
+function bgmPrev() {
+  bgmPlayIdx((bgmCurIdx - 1 + bgmTracks.length) % bgmTracks.length);
+}
+function bgmSetVol(v) {
+  bgmVolume = parseInt(v);
+  document.getElementById('bgm-vol-label').textContent = v + '%';
+  if(bgmReady) bgmPlayer.setVolume(bgmVolume);
+}
 </script>
 </body>
 </html>
